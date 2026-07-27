@@ -182,30 +182,10 @@ const uid = () => Math.random().toString(36).slice(2,9);
 // Seeded from Chiedu's GoalTracker_Pro_2026.xlsx
 const SEED = {
   settings:{ sleepTarget:8 },
-  habits:[
-    {id:'h1',name:'Quiet Time',freq:'Daily',target:7},
-    {id:'h2',name:'Eat Fruit/Veg',freq:'Daily',target:7},
-    {id:'h3',name:'Workout 4x/Week',freq:'Weekly',target:4},
-    {id:'h4',name:'Walk in purity',freq:'Daily',target:7},
-  ],
-  goals:{
-    '2026-04-17':[{id:uid(),text:'general study 1hr',status:'✅'}],
-    '2026-04-18':[{id:uid(),text:'Complete CSII HW',status:'✅'},{id:uid(),text:'1hr on ENGW Paper',status:'✅'},{id:uid(),text:'1hr Eng Math Project',status:'❌'},{id:uid(),text:'1hr CT Study',status:'❌'}],
-    '2026-04-19':[{id:uid(),text:'Finish Intro To Africa Paper',status:'✅'},{id:uid(),text:'Clean bike chain / install new brake pads',status:'⏳'},{id:uid(),text:'1hr ENGW paper',status:'⏳'},{id:uid(),text:'1hr CT Study',status:'⏳'}],
-    '2026-04-20':[{id:uid(),text:'Submit CT Pre-lab',status:null},{id:uid(),text:'Complete CT Post lab',status:null},{id:uid(),text:'Study CT 1hr',status:null},{id:uid(),text:'Study CS2 1hr',status:null},{id:uid(),text:'ENG math project 30min',status:null},{id:uid(),text:'30min ATG Workout',status:null},{id:uid(),text:'Meditate day & night',status:null}],
-    '2026-04-28':[{id:uid(),text:'Finish 1 Kings chapters 10–20',status:'❌'},{id:uid(),text:'Study CT 2.5hrs timed',status:'❌'},{id:uid(),text:'Grocery shop and make real food',status:'✅'},{id:uid(),text:'30 min ATG workout',status:'❌'}],
-    '2026-04-29':[{id:uid(),text:'Finish 1 Kings chapters 10–20',status:null},{id:uid(),text:'Finish HW 2 & 7 ENG Math',status:null},{id:uid(),text:'30min ATG workout',status:null},{id:uid(),text:'1 round of laundry, hang 1 bag',status:null},{id:uid(),text:'Screen off @ 11, sleep by 12',status:null}],
-    '2026-07-25':[{id:uid(),text:'Do 1 load of laundry',status:'✅'},{id:uid(),text:'Take out trash',status:'✅'},{id:uid(),text:'Shower & haircut',status:'✅'},{id:uid(),text:'Have quiet time',status:'❌'},{id:uid(),text:'30min ATG training',status:'❌'},{id:uid(),text:'Steam my clothes',status:'❌'},{id:uid(),text:'Go grocery shopping',status:'❌'}],
-    '2026-07-26':[{id:uid(),text:"Prepare for & lead men's devo",status:null},{id:uid(),text:'Go grocery shopping',status:null},{id:uid(),text:'Steam clothes for the week',status:null},{id:uid(),text:'Prepare rice & stew for the week',status:null},{id:uid(),text:'Read 15 pages of Habits of Grace',status:null}],
-  },
-  habitMarks:{
-    '2026-07-25':{h1:'❌',h2:'✅',h3:'❌',h4:'✅'},
-    '2026-07-26':{h4:'✅'},
-  },
-  sleep:{
-    '2026-07-25':{hours:9,note:'12–9'},
-    '2026-07-26':{hours:6,note:'3–9'},
-  },
+  habits:[],
+  goals:{},
+  habitMarks:{},
+  sleep:{},
 };
 
 let S = null;            // state
@@ -417,7 +397,7 @@ function viewHabits(){
     <div class="addrow"><button class="addbtn" style="width:100%;font-size:15px" onclick="habitFormOpen=true;render()">+ New habit</button></div>`;
   return datebar()+`
   <div class="sect">Habits <span class="sub">tap to mark · pips = this week</span></div>
-  <div class="card">${rows || `<div class="empty">No habits yet — add one below.</div>`}${form}</div>
+  <div class="card">${rows || `<div class="empty">No habits yet. Add one below — or restore a backup from the Stats tab.</div>`}${form}</div>
   <div class="legend"><span>✅ Did it</span><span>❌ Missed</span><span>tap again to clear</span></div>`;
 }
 function hfSetFreq(f){ hfFreq=f; hfTarget=f==='Daily'?7:4; render(); }
