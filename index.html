@@ -176,6 +176,21 @@ header{padding:14px 16px 4px;display:flex;align-items:center;justify-content:spa
 .calcell.today{outline:1.5px solid var(--orange);outline-offset:1px}
 .hb12{flex:none}
 
+.kpi .d{font-size:10px;margin-top:4px;font-weight:600}
+.dlt.up{color:var(--green)} .dlt.down{color:var(--pink)} .dlt.even{color:var(--faint)}
+.stackbar{display:flex;height:16px;border-radius:8px;overflow:hidden;background:var(--card2)}
+.stackbar i{display:block;height:100%}
+.stacklegend{display:flex;flex-wrap:wrap;gap:5px 14px;margin-top:10px;font-size:11.5px;color:var(--muted)}
+.stacklegend b{color:var(--ink);font-variant-numeric:tabular-nums}
+.sq{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.hlrow{display:flex;align-items:center;gap:11px;padding:11px 14px;border-bottom:1px solid var(--line)}
+.hlrow:last-child{border-bottom:none}
+.hlrow .ic{font-size:19px;flex:none}
+.hlrow .t{flex:1;font-size:13px;color:var(--muted)}
+.hlrow .t b{color:var(--ink);font-size:14px;display:block;margin-bottom:1px}
+.hlrow .val{font-family:var(--display);font-weight:800;font-size:17px;font-variant-numeric:tabular-nums;flex:none}
+
+
 /* ---------- tab bar ---------- */
 nav{position:fixed;bottom:0;left:0;right:0;background:rgba(18,18,43,.86);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1px solid var(--line);padding:8px 8px calc(8px + env(safe-area-inset-bottom))}
 .tabs{max-width:520px;margin:0 auto;display:flex}
@@ -499,50 +514,64 @@ function clearSleep(d){ delete S.sleep[d]; save(); render(); }
 function bumpTarget(n){ S.settings.sleepTarget=Math.min(12,Math.max(4,Math.round((S.settings.sleepTarget+n)*2)/2)); save(); render(); }
 
 /* ---------- STATS ---------- */
-let statsMode = 'week';           // week | month | year
+let statsMode = 'week';
+let statsWeekStart = weekStart(today());
 let statsMonth = today().slice(0,7);
 let statsYear = Number(today().slice(0,4));
 const MIN_YEAR = 2026;
+const MIN_WS = weekStart(MIN_YEAR+'-01-01');
 
 function monthDates(ym){ const [y,m]=ym.split('-').map(Number); const n=new Date(y,m,0).getDate();
   return Array.from({length:n},(_,i)=>ym+'-'+String(i+1).padStart(2,'0')); }
 function yearMonths(y){ return Array.from({length:12},(_,i)=>y+'-'+String(i+1).padStart(2,'0')); }
+function wsDates(ws){ return Array.from({length:7},(_,i)=>addDays(ws,i)); }
 function aggGoals(dates){ let done=0,total=0,days=0,pctSum=0;
   dates.forEach(d=>{ const g=dayGoals(d); if(g.length){ days++; const dn=g.filter(x=>x.status==='✅').length; done+=dn; total+=g.length; pctSum+=dn/g.length; }});
   return {done,total,days,avg:days?pctSum/days:null}; }
 function aggSleep(dates){ const v=dates.map(d=>sleepEntry(d)).filter(Boolean).map(e=>e.hours);
-  return {n:v.length,avg:v.length?v.reduce((a,b)=>a+b,0)/v.length:null}; }
+  return {n:v.length,avg:v.length?v.reduce((a,b)=>a+b,0)/v.length:null,
+    hit:v.filter(h=>h>=S.settings.sleepTarget).length}; }
 function aggHabit(hid,dates){ return dates.filter(d=>habitMark(d,hid)==='✅').length; }
-function habitDaysMarked(hid,dates){ return dates.filter(d=>habitMark(d,hid)!==null).length; }
 function pctClass(p){ return p==null?'':p>=0.8?'p1':p>=0.5?'p2':p>0?'p3':'p4'; }
+function statusCounts(dates){ const c={'✅':0,'⏳':0,'❌':0,'⏸️':0,open:0,total:0};
+  dates.forEach(d=>dayGoals(d).forEach(g=>{ c.total++; if(g.status)c[g.status]++; else c.open++; }));
+  return c; }
+function dowPerf(dates){ const sum=[0,0,0,0,0,0,0], n=[0,0,0,0,0,0,0];
+  dates.forEach(d=>{ const p=dayPct(d); if(p!=null){ const i=(fromIso(d).getDay()+6)%7; sum[i]+=p; n[i]++; }});
+  return sum.map((s,i)=>n[i]?s/n[i]:null); }
+function maxHabitStreak(hid){
+  const days=Object.keys(S.habitMarks).filter(d=>S.habitMarks[d][hid]==='✅').sort();
+  let best=0,cur=0,prev=null;
+  days.forEach(d=>{ cur=(prev&&addDays(prev,1)===d)?cur+1:1; best=Math.max(best,cur); prev=d; });
+  return best; }
+function delta(cur,prev,{pct=false,dec=0,suffix=''}={}){
+  if(cur==null||prev==null) return '';
+  const d=cur-prev;
+  const val=pct?Math.round(Math.abs(d)*100):(dec?Math.abs(d).toFixed(dec):Math.round(Math.abs(d)));
+  if(Number(val)===0) return '<div class="d"><span class="dlt even">— same as prev</span></div>';
+  return `<div class="d"><span class="dlt ${d>0?'up':'down'}">${d>0?'▲':'▼'} ${val}${suffix} vs prev</span></div>`; }
 
-/* --- svg bar chart: items = [{label,value}] --- */
-function barChart(items,{color='var(--orange)',unit='',yMax=null,target=null,tcolor='var(--blue)'}={}){
+/* --- svg bar chart --- */
+function barChart(items,{color='var(--orange)',yMax=null,target=null}={}){
   const W=480,H=150,padL=26,padB=18,padT=12;
   const cw=(W-padL-8)/items.length;
   const vals=items.map(i=>i.value).filter(v=>v!=null);
   const max=yMax||Math.max(1,...vals,target||0);
   const y=v=>padT+(H-padT-padB)*(1-v/max);
   let s=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
-  // gridlines
   for(const gv of [max, max/2]){
     s+=`<line x1="${padL}" y1="${y(gv)}" x2="${W-4}" y2="${y(gv)}" stroke="rgba(255,255,255,.06)"/>`;
-    s+=`<text x="${padL-4}" y="${y(gv)+3}" text-anchor="end" class="axval">${Math.round(gv*10)/10}</text>`;
-  }
-  if(target!=null) s+=`<line x1="${padL}" y1="${y(target)}" x2="${W-4}" y2="${y(target)}" stroke="${tcolor}" stroke-dasharray="4 4" stroke-opacity=".55"/>`;
+    s+=`<text x="${padL-4}" y="${y(gv)+3}" text-anchor="end" class="axval">${Math.round(gv*10)/10}</text>`; }
+  if(target!=null) s+=`<line x1="${padL}" y1="${y(target)}" x2="${W-4}" y2="${y(target)}" stroke="var(--blue)" stroke-dasharray="4 4" stroke-opacity=".55"/>`;
   items.forEach((it,i)=>{
     const x=padL+i*cw+cw*0.16, bw=cw*0.68;
     if(it.value!=null){
       const h=Math.max(3,(H-padT-padB)*(it.value/max));
-      s+=`<rect x="${x}" y="${H-padB-h}" width="${bw}" height="${h}" rx="4" fill="${it.fill||color}"/>`;
-    } else {
-      s+=`<rect x="${x}" y="${H-padB-3}" width="${bw}" height="3" rx="1.5" fill="rgba(255,255,255,.08)"/>`;
-    }
-    s+=`<text x="${x+bw/2}" y="${H-5}" text-anchor="middle" class="axlab">${it.label}</text>`;
-  });
-  return s+'</svg>';
-}
-/* --- svg line chart for sleep across a month --- */
+      s+=`<rect x="${x}" y="${H-padB-h}" width="${bw}" height="${h}" rx="4" fill="${it.fill||color}" ${it.dim?'opacity=".45"':''}/>`;
+    } else s+=`<rect x="${x}" y="${H-padB-3}" width="${bw}" height="3" rx="1.5" fill="rgba(255,255,255,.08)"/>`;
+    s+=`<text x="${x+bw/2}" y="${H-5}" text-anchor="middle" class="axlab">${it.label}</text>`; });
+  return s+'</svg>'; }
+/* --- svg line chart (sleep over dates) --- */
 function lineChart(dates,{target=null}={}){
   const W=480,H=150,padL=26,padB=18,padT=12;
   const pts=dates.map((d,i)=>({i,e:sleepEntry(d)}));
@@ -553,36 +582,36 @@ function lineChart(dates,{target=null}={}){
   let s=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
   for(const gv of [max, max/2]){
     s+=`<line x1="${padL}" y1="${y(gv)}" x2="${W-4}" y2="${y(gv)}" stroke="rgba(255,255,255,.06)"/>`;
-    s+=`<text x="${padL-4}" y="${y(gv)+3}" text-anchor="end" class="axval">${Math.round(gv*10)/10}</text>`;
-  }
+    s+=`<text x="${padL-4}" y="${y(gv)+3}" text-anchor="end" class="axval">${Math.round(gv*10)/10}</text>`; }
   if(target!=null) s+=`<line x1="${padL}" y1="${y(target)}" x2="${W-4}" y2="${y(target)}" stroke="var(--blue)" stroke-dasharray="4 4" stroke-opacity=".55"/>`;
-  // segments between consecutive logged nights
   let path='', prev=null;
-  pts.forEach(p=>{
-    if(p.e){ const cmd=(prev&&prev.i===p.i-1)?'L':'M'; path+=`${cmd}${x(p.i)} ${y(p.e.hours)} `; prev=p; }
-    else prev=null;
-  });
+  pts.forEach(p=>{ if(p.e){ path+=`${(prev&&prev.i===p.i-1)?'L':'M'}${x(p.i)} ${y(p.e.hours)} `; prev=p; } else prev=null; });
   s+=`<path d="${path}" fill="none" stroke="var(--blue)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`;
   pts.forEach(p=>{ if(p.e) s+=`<circle cx="${x(p.i)}" cy="${y(p.e.hours)}" r="3" fill="var(--blue)"/>`; });
   dates.forEach((d,i)=>{ const dd=Number(d.slice(8));
     if(dd===1||dd%5===0) s+=`<text x="${x(i)}" y="${H-5}" text-anchor="middle" class="axlab">${dd}</text>`; });
-  return s+'</svg>';
-}
-/* --- tiny 12-bar sparkline for a habit's year --- */
+  return s+'</svg>'; }
 function spark12(counts,max){
   const W=110,H=26,bw=W/12;
   let s=`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" class="hb12">`;
-  counts.forEach((c,i)=>{
-    const h=Math.max(2,(H-2)*(max?c/max:0));
-    s+=`<rect x="${i*bw+1}" y="${H-h}" width="${bw-2.5}" height="${h}" rx="1.5" fill="${c?'var(--pink)':'rgba(255,255,255,.09)'}"/>`;
-  });
-  return s+'</svg>';
-}
-
+  counts.forEach((c,i)=>{ const h=Math.max(2,(H-2)*(max?c/max:0));
+    s+=`<rect x="${i*bw+1}" y="${H-h}" width="${bw-2.5}" height="${h}" rx="1.5" fill="${c?'var(--pink)':'rgba(255,255,255,.09)'}"/>`; });
+  return s+'</svg>'; }
+function statusStack(sc){
+  if(!sc.total) return '<div class="empty">No goals in this period.</div>';
+  const segs=[['✅','var(--green)','Done'],['⏳','var(--amber)','In progress'],['❌','var(--pink)','Skipped'],['⏸️','#9A9AB8','On hold'],['open','rgba(255,255,255,.14)','Unmarked']];
+  let bar='<div class="stackbar">', leg='<div class="stacklegend">';
+  segs.forEach(([k,col,lab])=>{ const n=sc[k]; if(!n) return;
+    bar+=`<i style="width:${n/sc.total*100}%;background:${col}"></i>`;
+    leg+=`<span><span class="sq" style="background:${col}"></span>${lab} <b>${n}</b></span>`; });
+  return bar+'</div>'+leg+'</div>'; }
 function kpis(list){
   return `<div class="kpigrid">`+list.map(k=>
-    `<div class="kpi"><div class="v" style="color:${k.c}">${k.v}</div><div class="l">${k.l}</div></div>`).join('')+`</div>`;
-}
+    `<div class="kpi"><div class="v" style="color:${k.c}">${k.v}</div><div class="l">${k.l}</div>${k.d||''}</div>`).join('')+`</div>`; }
+function meterRows(rows){ // [{name, pct(0-1|null), right, hit, color}]
+  return rows.map(r=>`<div class="wkrow"><div class="n">${r.name}</div>
+    <div class="meter"><i class="${r.hit?'hit':''}" style="width:${r.pct==null?0:Math.min(100,r.pct*100)}%${r.color&&!r.hit?';background:'+r.color:''}"></i></div>
+    <div class="c">${r.right}</div></div>`).join(''); }
 
 function viewStats(){
   const seg=`<div class="segbar">
@@ -590,7 +619,7 @@ function viewStats(){
     <button class="${statsMode==='month'?'on':''}" onclick="statsMode='month';render()">Month</button>
     <button class="${statsMode==='year'?'on':''}" onclick="statsMode='year';render()">Year</button>
   </div>`;
-  let body = statsMode==='week'?statsWeek():statsMode==='month'?statsMonthView():statsYearView();
+  const body = statsMode==='week'?statsWeekView():statsMode==='month'?statsMonthView():statsYearView();
   return seg+body+`
   <div class="sect">Backup</div>
   <div class="card">
@@ -604,79 +633,99 @@ function viewStats(){
   </div>`;
 }
 
-/* ----- WEEK ----- */
-function statsWeek(){
-  const wk=weekDays(today());
-  const g=aggGoals(wk), sl=aggSleep(wk);
-  const dgrid = wk.map(d=>{
-    const p=dayPct(d);
-    return `<div class="dg"><div class="cell ${pctClass(p)} ${d===today()?'today':''}">${p==null?'·':Math.round(p*100)}</div><div class="lab">${fmtDow(d).slice(0,2)}</div></div>`;
-  }).join('');
-  const hrows=S.habits.map(h=>{
-    const c=habitWeekCount(h.id,today()); const hit=c>=h.target;
-    return `<div class="wkrow"><div class="n">${esc(h.name)}</div>
-      <div class="meter"><i class="${hit?'hit':''}" style="width:${Math.min(100,c/h.target*100)}%"></i></div>
-      <div class="c">${c}/${h.target}${hit?' 🎯':''}</div></div>`;
-  }).join('');
-  return kpis([
-    {v:g.avg==null?'–':Math.round(g.avg*100)+'%', l:'Avg day score', c:'var(--orange)'},
-    {v:g.done, l:'Goals done', c:'var(--green)'},
-    {v:g.days, l:'Days tracked', c:'var(--pink)'},
-    {v:sl.avg==null?'–':sl.avg.toFixed(1)+'h', l:'Avg sleep', c:'var(--blue)'},
+/* ===== WEEK ===== */
+function shiftWk(n){ const ws=addDays(statsWeekStart,n*7); if(ws<MIN_WS) return; statsWeekStart=ws; render(); }
+function statsWeekView(){
+  const ws=statsWeekStart, days=wsDates(ws), prevDays=wsDates(addDays(ws,-7));
+  const g=aggGoals(days), pg=aggGoals(prevDays);
+  const sl=aggSleep(days), psl=aggSleep(prevDays);
+  const isCur=ws===weekStart(today());
+  const nav=`<div class="periodnav">
+    <button class="nav" onclick="shiftWk(-1)">‹</button>
+    <div class="plabel">${isCur?'This week':fmt(ws)+' – '+fmt(addDays(ws,6))}</div>
+    <button class="nav" onclick="shiftWk(1)">›</button></div>`;
+  const dgrid = days.map(d=>{ const p=dayPct(d);
+    return `<div class="dg"><div class="cell ${pctClass(p)} ${d===today()?'today':''}">${p==null?'·':Math.round(p*100)}</div><div class="lab">${fmtDow(d).slice(0,2)}</div></div>`; }).join('');
+  // 8-week trend ending at selected week
+  const trend=[]; for(let i=7;i>=0;i--){ const w=addDays(ws,-7*i); if(w<MIN_WS){trend.push(null);continue;}
+    const a=aggGoals(wsDates(w)); trend.push({label:(fromIso(w).getMonth()+1)+'/'+fromIso(w).getDate(),
+      value:a.avg==null?null:Math.round(a.avg*100), dim:i!==0}); }
+  const trendItems=trend.filter(Boolean);
+  const sleepBars=days.map(d=>{ const e=sleepEntry(d);
+    return {label:fmtDow(d).slice(0,2), value:e?e.hours:null, fill:'var(--blue)'}; });
+  const hrows=meterRows(S.habits.map(h=>{
+    const c=aggHabit(h.id,days), pc=aggHabit(h.id,prevDays), hit=c>=h.target;
+    const arrow=c>pc?' <span class="dlt up">▲</span>':c<pc?' <span class="dlt down">▼</span>':'';
+    return {name:esc(h.name), pct:c/h.target, hit, right:`${c}/${h.target} · lw ${pc}${arrow}`}; }));
+  return nav+kpis([
+    {v:g.avg==null?'–':Math.round(g.avg*100)+'%', l:'Avg day score', c:'var(--orange)', d:delta(g.avg,pg.avg,{pct:true,suffix:'pts'})},
+    {v:g.done, l:'Goals done', c:'var(--green)', d:delta(g.done,pg.done)},
+    {v:g.days+'/7', l:'Days tracked', c:'var(--pink)', d:delta(g.days,pg.days)},
+    {v:sl.avg==null?'–':sl.avg.toFixed(1)+'h', l:'Avg sleep', c:'var(--blue)', d:delta(sl.avg,psl.avg,{dec:1,suffix:'h'})},
   ])+`
-  <div class="sect">Daily goal scores</div>
+  <div class="sect">Daily scores</div>
   <div class="card"><div class="daygrid7">${dgrid}</div></div>
-  <div class="sect">Habits this week</div>
+  <div class="sect">Week-over-week <span class="sub">avg score, last 8 weeks</span></div>
+  <div class="card chartwrap">${trendItems.some(t=>t.value!=null)?barChart(trendItems,{yMax:100}):'<div class="empty">Track a few weeks to see the trend.</div>'}</div>
+  <div class="sect">Goal outcomes</div>
+  <div class="card" style="padding:14px">${statusStack(statusCounts(days))}</div>
+  <div class="sect">Sleep <span class="sub">dashed = target · ${sl.hit}/${sl.n} nights ≥ target</span></div>
+  <div class="card chartwrap">${sl.n?barChart(sleepBars,{color:'var(--blue)',target:S.settings.sleepTarget}):'<div class="empty">No sleep logged this week.</div>'}</div>
+  <div class="sect">Habits <span class="sub">vs last week (lw)</span></div>
   <div class="card">${hrows||'<div class="empty">Add habits to see weekly progress.</div>'}</div>`;
 }
 
-/* ----- MONTH ----- */
+/* ===== MONTH ===== */
 function shiftMonth(n){ let [y,m]=statsMonth.split('-').map(Number); m+=n; if(m<1){m=12;y--;} if(m>12){m=1;y++;}
   if(y<MIN_YEAR) return; statsMonth=y+'-'+String(m).padStart(2,'0'); render(); }
+function prevYm(ym){ let [y,m]=ym.split('-').map(Number); m--; if(m<1){m=12;y--;} return y+'-'+String(m).padStart(2,'0'); }
 function statsMonthView(){
   const [y,m]=statsMonth.split('-').map(Number);
-  const dates=monthDates(statsMonth);
-  const g=aggGoals(dates), sl=aggSleep(dates);
+  const dates=monthDates(statsMonth), pdates=monthDates(prevYm(statsMonth));
+  const g=aggGoals(dates), pg=aggGoals(pdates), sl=aggSleep(dates), psl=aggSleep(pdates);
   const nav=`<div class="periodnav">
     <button class="nav" onclick="shiftMonth(-1)">‹</button>
     <div class="plabel">${MON[m-1]} ${y}</div>
     <button class="nav" onclick="shiftMonth(1)">›</button></div>`;
-  // calendar heatmap (Mon-start)
   const firstDow=(fromIso(statsMonth+'-01').getDay()+6)%7;
   let cells=''; for(let i=0;i<firstDow;i++) cells+='<div class="calcell blank"></div>';
-  dates.forEach(d=>{ const p=dayPct(d);
-    cells+=`<div class="calcell ${pctClass(p)} ${d===today()?'today':''}">${Number(d.slice(8))}</div>`; });
-  // habits in month
-  const hrows=S.habits.map(h=>{
-    const c=aggHabit(h.id,dates);
+  dates.forEach(d=>{ cells+=`<div class="calcell ${pctClass(dayPct(d))} ${d===today()?'today':''}">${Number(d.slice(8))}</div>`; });
+  const dp=dowPerf(dates);
+  const dowRows=meterRows(DOW.map((nm,i)=>({name:nm, pct:dp[i], color:'var(--orange)',
+    right:dp[i]==null?'–':Math.round(dp[i]*100)+'%', hit:dp[i]!=null&&dp[i]>=0.8})));
+  const hrows=meterRows(S.habits.map(h=>{
+    const c=aggHabit(h.id,dates), pc=aggHabit(h.id,pdates);
     const poss=h.freq==='Weekly'? Math.ceil(dates.length/7)*h.target : dates.length;
-    return `<div class="wkrow"><div class="n">${esc(h.name)}</div>
-      <div class="meter"><i class="${c>=poss?'hit':''}" style="width:${Math.min(100,c/poss*100)}%"></i></div>
-      <div class="c">${c}×</div></div>`;
-  }).join('');
+    const arrow=c>pc?' <span class="dlt up">▲</span>':c<pc?' <span class="dlt down">▼</span>':'';
+    return {name:esc(h.name), pct:c/poss, hit:c>=poss, right:`${c}× · lm ${pc}${arrow}`}; }));
   return nav+kpis([
-    {v:g.avg==null?'–':Math.round(g.avg*100)+'%', l:'Avg day score', c:'var(--orange)'},
-    {v:g.done+(g.total?'/'+g.total:''), l:'Goals done', c:'var(--green)'},
-    {v:g.days, l:'Days tracked', c:'var(--pink)'},
-    {v:sl.avg==null?'–':sl.avg.toFixed(1)+'h', l:'Avg sleep', c:'var(--blue)'},
+    {v:g.avg==null?'–':Math.round(g.avg*100)+'%', l:'Avg day score', c:'var(--orange)', d:delta(g.avg,pg.avg,{pct:true,suffix:'pts'})},
+    {v:g.done+(g.total?'/'+g.total:''), l:'Goals done', c:'var(--green)', d:delta(g.done,pg.done)},
+    {v:g.days, l:'Days tracked', c:'var(--pink)', d:delta(g.days,pg.days)},
+    {v:sl.avg==null?'–':sl.avg.toFixed(1)+'h', l:'Avg sleep', c:'var(--blue)', d:delta(sl.avg,psl.avg,{dec:1,suffix:'h'})},
   ])+`
   <div class="sect">Goal score calendar</div>
   <div class="card cal">
     <div class="calhead">${DOW.map(d=>'<span>'+d.slice(0,2)+'</span>').join('')}</div>
-    <div class="calgrid">${cells}</div>
-  </div>
-  <div class="sect">Sleep — ${MON[m-1]} <span class="sub">dashed = target</span></div>
+    <div class="calgrid">${cells}</div></div>
+  <div class="sect">Goal outcomes</div>
+  <div class="card" style="padding:14px">${statusStack(statusCounts(dates))}</div>
+  <div class="sect">Best days of the week <span class="sub">avg score by weekday</span></div>
+  <div class="card">${dowRows}</div>
+  <div class="sect">Sleep — ${MON[m-1]} <span class="sub">dashed = target · ${sl.hit}/${sl.n} nights ≥ target</span></div>
   <div class="card chartwrap">${sl.n?lineChart(dates,{target:S.settings.sleepTarget}):'<div class="empty">No sleep logged this month.</div>'}</div>
-  <div class="sect">Habits — ${MON[m-1]}</div>
+  <div class="sect">Habits <span class="sub">vs last month (lm)</span></div>
   <div class="card">${hrows||'<div class="empty">Add habits to see monthly totals.</div>'}</div>`;
 }
 
-/* ----- YEAR ----- */
+/* ===== YEAR ===== */
 function shiftYear(n){ if(statsYear+n<MIN_YEAR) return; statsYear+=n; render(); }
 function statsYearView(){
   const months=yearMonths(statsYear);
   const allDates=months.flatMap(monthDates);
   const g=aggGoals(allDates), sl=aggSleep(allDates);
+  const pAll=statsYear-1>=MIN_YEAR? yearMonths(statsYear-1).flatMap(monthDates):null;
+  const pg=pAll?aggGoals(pAll):{avg:null,done:null,days:null}, psl=pAll?aggSleep(pAll):{avg:null};
   const nav=`<div class="periodnav">
     <button class="nav" onclick="shiftYear(-1)">‹</button>
     <div class="plabel">${statsYear}</div>
@@ -685,33 +734,51 @@ function statsYearView(){
     return {label:MON[i][0], value:a.avg==null?null:Math.round(a.avg*100)}; });
   const sleepBars=months.map((ym,i)=>{ const a=aggSleep(monthDates(ym));
     return {label:MON[i][0], value:a.avg==null?null:Math.round(a.avg*10)/10, fill:'var(--blue)'}; });
-  // habits: 12-month sparklines + totals + weekly-target hit count
+  const consBars=months.map((ym,i)=>{ const a=aggSleep(monthDates(ym));
+    return {label:MON[i][0], value:a.n?Math.round(a.hit/a.n*100):null, fill:'var(--purple)'}; });
+  // highlights
+  const perfect=allDates.filter(d=>dayPct(d)===1).length;
+  let bestM=null; months.forEach((ym,i)=>{ const a=aggGoals(monthDates(ym));
+    if(a.avg!=null&&(!bestM||a.avg>bestM.avg)) bestM={i,avg:a.avg}; });
+  let bestW=null, ws=weekStart(statsYear+'-01-01');
+  while(ws.slice(0,4)<=String(statsYear)){ const a=aggGoals(wsDates(ws));
+    if(a.days>=3&&a.avg!=null&&(!bestW||a.avg>bestW.avg)) bestW={ws,avg:a.avg}; ws=addDays(ws,7); }
+  let bestH=null; S.habits.forEach(h=>{ const s=maxHabitStreak(h.id);
+    if(s>0&&(!bestH||s>bestH.s)) bestH={name:h.name,s}; });
+  const totalMarks=allDates.reduce((a,d)=>a+S.habits.filter(h=>habitMark(d,h.id)==='✅').length,0);
+  const hl=[
+    bestM&&{ic:'🏆',t:'<b>Best month</b>highest avg day score',val:MON[bestM.i]+' · '+Math.round(bestM.avg*100)+'%'},
+    bestW&&{ic:'📈',t:'<b>Best week</b>3+ tracked days',val:fmt(bestW.ws)+' · '+Math.round(bestW.avg*100)+'%'},
+    {ic:'💯',t:'<b>Perfect days</b>every goal ✅',val:perfect},
+    bestH&&{ic:'🔥',t:'<b>Longest habit streak</b>'+esc(bestH?bestH.name:''),val:bestH?bestH.s+'d':''},
+    {ic:'✅',t:'<b>Habit check-ins</b>total ✅ marks',val:totalMarks},
+  ].filter(Boolean).map(h=>`<div class="hlrow"><span class="ic">${h.ic}</span><div class="t">${h.t}</div><div class="val">${h.val}</div></div>`).join('');
   const hrows=S.habits.map(h=>{
     const counts=months.map(ym=>aggHabit(h.id,monthDates(ym)));
     const totalC=counts.reduce((a,b)=>a+b,0);
     let extra='';
-    if(h.freq==='Weekly'){
-      let hit=0, ws=weekStart(statsYear+'-01-01');
-      while(ws.slice(0,4)<=String(statsYear)){
-        const wd=Array.from({length:7},(_,i)=>addDays(ws,i));
-        if(wd.filter(d=>habitMark(d,h.id)==='✅').length>=h.target) hit++;
-        ws=addDays(ws,7);
-      }
-      extra=` · ${hit} wk 🎯`;
-    }
+    if(h.freq==='Weekly'){ let hit=0, w=weekStart(statsYear+'-01-01');
+      while(w.slice(0,4)<=String(statsYear)){
+        if(wsDates(w).filter(d=>habitMark(d,h.id)==='✅').length>=h.target) hit++; w=addDays(w,7); }
+      extra=` · ${hit} wk 🎯`; }
     return `<div class="wkrow"><div class="n">${esc(h.name)}<div style="font-weight:400;font-size:11px;color:var(--faint)">${totalC}×${extra}</div></div>
-      ${spark12(counts,Math.max(...counts,1))}</div>`;
-  }).join('');
+      ${spark12(counts,Math.max(...counts,1))}</div>`; }).join('');
   return nav+kpis([
-    {v:g.avg==null?'–':Math.round(g.avg*100)+'%', l:'Avg day score', c:'var(--orange)'},
-    {v:g.done, l:'Goals done', c:'var(--green)'},
-    {v:g.days, l:'Days tracked', c:'var(--pink)'},
-    {v:sl.avg==null?'–':sl.avg.toFixed(1)+'h', l:'Avg sleep', c:'var(--blue)'},
+    {v:g.avg==null?'–':Math.round(g.avg*100)+'%', l:'Avg day score', c:'var(--orange)', d:delta(g.avg,pg.avg,{pct:true,suffix:'pts'})},
+    {v:g.done, l:'Goals done', c:'var(--green)', d:delta(g.done,pg.done)},
+    {v:g.days, l:'Days tracked', c:'var(--pink)', d:delta(g.days,pg.days)},
+    {v:sl.avg==null?'–':sl.avg.toFixed(1)+'h', l:'Avg sleep', c:'var(--blue)', d:delta(sl.avg,psl.avg,{dec:1,suffix:'h'})},
   ])+`
+  <div class="sect">Highlights</div>
+  <div class="card">${hl||'<div class="empty">Track some days to earn highlights.</div>'}</div>
   <div class="sect">Goal score by month <span class="sub">%</span></div>
   <div class="card chartwrap">${g.days?barChart(scoreBars,{yMax:100}):'<div class="empty">Nothing tracked in '+statsYear+' yet.</div>'}</div>
+  <div class="sect">Goal outcomes — ${statsYear}</div>
+  <div class="card" style="padding:14px">${statusStack(statusCounts(allDates))}</div>
   <div class="sect">Sleep by month <span class="sub">avg hrs · dashed = target</span></div>
   <div class="card chartwrap">${sl.n?barChart(sleepBars,{color:'var(--blue)',target:S.settings.sleepTarget}):'<div class="empty">No sleep logged in '+statsYear+'.</div>'}</div>
+  <div class="sect">Sleep consistency <span class="sub">% of nights ≥ target</span></div>
+  <div class="card chartwrap">${sl.n?barChart(consBars,{color:'var(--purple)',yMax:100}):'<div class="empty">No sleep logged in '+statsYear+'.</div>'}</div>
   <div class="sect">Habits — ${statsYear} <span class="sub">monthly rhythm</span></div>
   <div class="card">${hrows||'<div class="empty">Add habits to see yearly trends.</div>'}</div>`;
 }
