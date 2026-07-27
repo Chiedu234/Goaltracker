@@ -1,4 +1,4 @@
-GOALTRACKER 2026 — INSTALL ON YOUR IPHONE (free, ~5 minutes)
+GOAL TRACKER — INSTALL ON YOUR IPHONE (free, ~5 minutes)
 
 WHAT'S IN THIS FOLDER
   index.html            the app
