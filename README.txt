@@ -30,8 +30,19 @@ STEP 2 — ADD TO YOUR HOME SCREEN
 That's it. It launches full-screen like a native app, works offline,
 and your data is saved on your phone.
 
+STEP 3 — LOAD YOUR DATA (one time)
+    The public app file contains NO personal data. Your goals, habits,
+    and sleep history are in the separate file goaltracker-backup.json.
+    1. Get goaltracker-backup.json onto your iPhone (AirDrop it to
+       yourself, or save it to iCloud Drive / Files). Do NOT upload
+       this file to GitHub.
+    2. Open the app -> Stats tab -> Backup -> Restore -> pick the file.
+    All your history appears instantly.
+
 NOTES
   - Your data lives on your device (it never leaves your phone).
+  - The GitHub repo only contains the empty app shell, so being a
+    public repo reveals nothing about you.
   - Use Stats -> Backup to export a JSON file occasionally, especially
     before switching phones or clearing Safari website data.
   - The app comes pre-loaded with your goals, habits, and sleep logs
